@@ -184,7 +184,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
     vec2 uv = (fragCoord - iResolution.xy * .5) / iResolution.y;
     vec3 lightDir = normalize(vec3(-1., .2, -1.));
-    vec3 sunpos = normalize(vec3(-1., 0.4 * abs(sin(0.1*iTime)), -1.));
+    vec3 sunpos = normalize(vec3(-1., 0.8 * abs(sin(0.1*iTime)) - 0.4, -1.));
     
     //camera data
     //vec3 cameraStep = vec3(lightDir.x, 0., lightDir.z) * iTime;
@@ -193,7 +193,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     vec3 cameraPos = vec3(5., 2., 5.);
     vec3 lookAtPoint = vec3(-1., 2, 4.);
     
-    animateCamera(iTime, cameraPos);
+    animateCamera(0.3*iTime, cameraPos);
     
     mat3 view_matrix = camera_matrix(cameraPos, lookAtPoint);
     
