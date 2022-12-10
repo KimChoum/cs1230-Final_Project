@@ -1,11 +1,13 @@
-mat3 cameraRotation( vec2 m )
+mat3 rotate(float theta, vec3 axis)
 {
-    m.y = -m.y;
+    axis = normalize(axis);
+    float sinTheta = sin(theta), cosTheta = cos(theta);
+
+    mat3 rotateMatrix = mat3(
+        cosTheta + axis.x * axis.x * (1. - cosTheta), axis.x * axis.y * (1. - cosTheta) + axis.z * sinTheta, axis.x * axis.z * (1. - cosTheta) - axis.y * sinTheta,
+        axis.x * axis.y * (1. - cosTheta) - axis.z * sinTheta, cosTheta + axis.y * axis.y * (1. - cosTheta), axis.y * axis.z * (1. - cosTheta) + axis.x * sinTheta,
+        axis.x * axis.z * (1. - cosTheta) + axis.y * sinTheta, axis.y * axis.z * (1. - cosTheta) - axis.x * sinTheta, cosTheta + axis.z * axis.z * (1. - cosTheta)
+    );
     
-    vec2 s = sin(m);
-    vec2 c = cos(m);
-    mat3 rotX = mat3(1.0, 0.0, 0.0, 0.0, c.y, s.y, 0.0, -s.y, c.y);
-    mat3 rotY = mat3(c.x, 0.0, -s.x, 0.0, 1.0, 0.0, s.x, 0.0, c.x);
-    
-    return rotY * rotX;
+    return rotateMatrix;
 }

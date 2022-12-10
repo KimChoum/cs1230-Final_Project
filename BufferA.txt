@@ -5,8 +5,7 @@ const ivec2 UP = ivec2(0, 1);
 
 const ivec2 LOOK = ivec2(0, 2);
 
-const ivec2 VMOUSE = ivec2(1, 0);
-const ivec2 PMOUSE = ivec2(1, 2);
+const ivec2 MOUSEPOSITION = ivec2(1, 2);
 
 const int KEY_LEFT  = 37;
 const int KEY_UP    = 38;
@@ -42,15 +41,6 @@ vec3 keyboardInput(vec3 look, vec3 up) {
     return move;
 }
 
-vec3 cameraDirInput(vec2 vm, vec3 look, vec3 up) {
-    vec2 m = vm/iResolution.x;
-    mat3 rotateMatrix = cameraRotation(m);
-    look = rotateMatrix * look;
-    up = rotateMatrix * up;
-    
-    return rotateMatrix * keyboardInput(look, up).xyz;
-}
-
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
     if (any(greaterThan(ivec2(fragCoord), MEMORY_BOUNDARY))) return;
@@ -60,20 +50,37 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
         update(fragColor, fragCoord, POSITION, vec4(0., 2., 0., 0.));
         update(fragColor, fragCoord, UP, vec4(0.0, 1.0, 0.0, 0.0));
         update(fragColor, fragCoord, LOOK, vec4(0.0, 0.0, -1.0, 0.0));  // left (1, 0, 0)
-        update(fragColor, fragCoord, VMOUSE, vec4(0.0));
-        update(fragColor, fragCoord, PMOUSE, vec4(0.0));
+        update(fragColor, fragCoord, MOUSEPOSITION, vec4(0.0));
         return;
     }
     
     vec3 position = load(POSITION).xyz;
     vec3 up = load(UP).xyz;
     vec3 look = load(LOOK).xyz;
-    vec2 pm = load(PMOUSE).xy;
-    vec3 vm = load(VMOUSE).xyz;
     
-    vec3 move = cameraDirInput(vm.xy, look, up);
+    vec3 move = keyboardInput(look, up);
     
     position += move * iTimeDelta * moveRate;
+        
+    if(iMouse.w > 0.0) {
+        update(fragColor, fragCoord, MOUSEPOSITION, vec4(abs(iMouse.zw), 1.0, 0.0));
+    }
+    
+    if(iMouse.z > 0.0) {
+        vec2 mousePosition = load(MOUSEPOSITION).xy;
+        vec2 mouseMove = iMouse.xy - mousePosition;
+        if(mouseMove.x != 0.0) {
+            mat3 rotateMatrix = rotate(mouseMove.x / 360., vec3(0, 1, 0));
+            look = rotateMatrix * look;
+            up = rotateMatrix * up;
+        }
+        if(mouseMove.y != 0.0) {
+            mat3 rotateMatrix = rotate(mouseMove.y / 360., cross(up, look));
+            look = rotateMatrix * look;
+            up = rotateMatrix * up;
+        }
+        update(fragColor, fragCoord, MOUSEPOSITION, vec4(iMouse.xy, 0.0, 0.0));
+    }
     
     update(fragColor, fragCoord, POSITION, vec4(position, 1.0));
     update(fragColor, fragCoord, UP, vec4(up, 0.0));
