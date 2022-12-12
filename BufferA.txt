@@ -47,7 +47,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     
     
     if (iTime == 0.0 || iFrame == 0) {
-        update(fragColor, fragCoord, POSITION, vec4(0., 2., 0., 0.));
+        update(fragColor, fragCoord, POSITION, vec4(0., 2., -5., 0.));
         update(fragColor, fragCoord, UP, vec4(0.0, 1.0, 0.0, 0.0));
         update(fragColor, fragCoord, LOOK, vec4(0.0, 0.0, -1.0, 0.0));  // left (1, 0, 0)
         update(fragColor, fragCoord, MOUSEPOSITION, vec4(0.0));
@@ -69,12 +69,12 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     if(iMouse.z > 0.0) {
         vec2 mousePosition = load(MOUSEPOSITION).xy;
         vec2 mouseMove = iMouse.xy - mousePosition;
-        if(mouseMove.x != 0.0) {
+        if(mouseMove.x != 0.0 && abs(mouseMove.x) < 10000.) {
             mat3 rotateMatrix = rotate(mouseMove.x / 360., vec3(0, 1, 0));
             look = rotateMatrix * look;
             up = rotateMatrix * up;
         }
-        if(mouseMove.y != 0.0) {
+        if(mouseMove.y != 0.0 && abs(mouseMove.y) < 10000.) {
             mat3 rotateMatrix = rotate(mouseMove.y / 360., cross(up, look));
             look = rotateMatrix * look;
             up = rotateMatrix * up;
