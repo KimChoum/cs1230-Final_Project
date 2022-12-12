@@ -1,0 +1,509 @@
+const bool BezierCurve = false;
+
+const ivec2 MEMORY_BOUNDARY = ivec2(4, 3);
+
+const ivec2 POSITION = ivec2(0, 0);
+const ivec2 UP = ivec2(0, 1);
+
+const ivec2 LOOK = ivec2(0, 2);
+
+const float MIN_DIST = 0.01;
+const float MAX_DIST = 50.0;
+const int OCTAVES = 8;
+
+#define time (iTime+99.0)
+#define pi 3.14159265359
+
+bool hitRocket;
+
+void angularRepeat(const float a, inout vec2 v)
+{
+    float an = atan(v.y,v.x);
+    float len = length(v);
+    an = mod(an+a*.5,a)-a*.5;
+    v = vec2(cos(an),sin(an))*len;
+}
+
+
+void angularRepeat(const float a, const float offset, inout vec2 v)
+{
+    float an = atan(v.y,v.x);
+    float len = length(v);
+    an = mod(an+a*.5,a)-a*.5;
+    an+=offset;
+    v = vec2(cos(an),sin(an))*len;
+}
+
+float mBox(vec3 p, vec3 b)
+{
+	return max(max(abs(p.x)-b.x,abs(p.y)-b.y),abs(p.z)-b.z);
+}
+
+float mSphere(vec3 p, float r)
+{
+    return length(p)-r;
+}
+
+
+vec2 frot(const float a, in vec2 v)
+{
+    float cs = cos(a), ss = sin(a);
+    vec2 u = v;
+    v.x = u.x*cs + u.y*ss;
+    v.y = u.x*-ss+ u.y*cs;
+    return v;
+}
+
+void rotate(const float a, inout vec2 v)
+{
+    float cs = cos(a), ss = sin(a);
+    vec2 u = v;
+    v.x = u.x*cs + u.y*ss;
+    v.y = u.x*-ss+ u.y*cs;
+}
+
+#define rocketRotation (sin(time)*.1)
+
+float dfRocketBody(vec3 p)
+{
+    rotate(rocketRotation,p.yz);
+    
+    vec3 p2 = p;
+    vec3 pWindow = p;
+    
+    angularRepeat(pi*.25,p2.zy);
+    float d = p2.z;
+    d = max(d, frot(pi*-.125, p2.xz+vec2(-.7,0)).y);
+    d = max(d, frot(pi*-.25*.75, p2.xz+vec2(-0.95,0)).y);
+    d = max(d, frot(pi*-.125*.5, p2.xz+vec2(-0.4,0)).y);
+    d = max(d, frot(pi*.125*.25, p2.xz+vec2(+0.2,0)).y);
+    d = max(d, frot(pi*.125*.8, p2.xz+vec2(.55,0)).y);
+    d = max(d,-.8-p.x);
+    d -= .5;
+    
+    vec3 pThruster = p2;
+    pThruster -= vec3(-1.46,.0,.0);
+    rotate(pi*-.2,pThruster.xz);
+    d = min(d,mBox(pThruster,vec3(.1,.4,.27)));
+    d = min(d,mBox(pThruster-vec3(-.09,.0,.0),vec3(.1,.3,.07)));
+    
+    
+    pWindow -= vec3(.1,.0,.0);
+    angularRepeat(pi*.25,pWindow.xy);
+    pWindow -= vec3(.17,.0,.0);
+    d = min(d,mBox(pWindow,vec3(.03,.2,.55)));
+    
+  	return d;
+}
+
+float dfRocketFins(vec3 p)
+{
+    rotate(rocketRotation,p.yz);
+    
+    vec3 pFins = p;
+    angularRepeat(pi*.5,pFins.zy);
+    pFins -= vec3(-1.0+cos(p.x+.2)*.5,.0,.0);
+    rotate(pi*.25,pFins.xz);
+    float scale = 1.0-pFins.z*.5;
+    float d =mBox(pFins,vec3(.17,.03,3.0)*scale)*.5;
+    return d;
+}
+
+float dfRocket(vec3 p)
+{
+    float proxy = mBox(p,vec3(2.5,.8,.8));
+    if (proxy>1.0)
+    	return proxy;
+    return min(dfRocketBody(p),dfRocketFins(p));
+}
+
+float dfTrailPart(vec3 p, float t)
+{
+    vec3 pm = p;
+    pm.x = mod(p.x+1.0+t,2.0)-1.0;
+    float index = p.x-pm.x;
+    
+    float rpos =(-1.7-index);
+    
+    
+    float i2 = rpos;
+    
+    float rs = .5;
+    
+    float rtime1 = (t*.32 + i2*0.2)*rs;
+	float rtime2 = (t*.47 + i2*0.3)*rs;
+	float rtime3 = (t*.53 + i2*0.1)*rs;
+	mat3 rot = mat3(cos(rtime1),0,sin(rtime1),0,1,0,-sin(rtime1),0,cos(rtime1))*
+    mat3(cos(rtime2),sin(rtime2),.0,-sin(rtime2),cos(rtime2),.0,0,0,1)*
+    mat3(1,0,0,0,cos(rtime3),sin(rtime3),0,-sin(rtime3),cos(rtime3));
+    
+    //p -= vec3(-2.0,.0,.0);
+    float size = .6-.5/(1.0+rpos);
+    size = min(size,.6-.5/(17.0-rpos));
+    size = max(size,.0);
+    return mBox(pm*rot,vec3(size));
+}
+
+float dfTrail(vec3 p)
+{
+    float clip = max(p.x+1.7, -1.7-16.0-p.x);
+    float proxy = max(abs(p.y)-1.0, abs(p.z)-1.0);
+    float proxy2 = max(clip,proxy);
+    if (proxy2>0.5) return proxy2;
+    
+    float d = 999.0;
+    for (int i=0; i<3; i++)
+    {
+        d=min(d,dfTrailPart(p,time*6.0+float(i)*21.33));
+    }
+        
+    return max(d,clip);
+}
+
+
+float df(vec3 p)
+{
+    return min(dfRocket(p),dfTrail(p));
+}
+
+vec3 nf(vec3 p)
+{
+    vec2 e = vec2(0,0.005);
+    return normalize(vec3(df(p+e.yxx),df(p+e.xyx),df(p+e.xxy)));
+}
+
+
+float noise(in vec2 uv)
+{
+    return sin(uv.x)+cos(uv.y);
+}
+
+
+float height(vec3 p)
+{
+    vec2 uv = p.xz;
+    uv /= 1.5;
+    float value = 0.;
+    float amplitude = 1.;
+    float freq = 0.8;
+    
+    for (int i = 0; i < OCTAVES; i++)
+    {
+        value = max(value,value+(.25-abs(noise(uv * freq)-.3) * amplitude));
+        amplitude *= .4;
+        freq *= 2.;
+        
+    }
+    
+    return value*2.0-2.0;
+    //return value*2.0;
+}
+
+
+mat3 camera_matrix(vec3 cameraPos, vec3 lookAtPoint) {
+    vec3 look = lookAtPoint - cameraPos;
+    vec3 up = vec3 (0.f,1.f,0.f);
+    
+    vec3 w = normalize(-look);
+    vec3 v = normalize(up - dot(up,w)*w);
+    vec3 u = cross(v, w);
+	
+	return mat3(u,v,w);
+}
+
+mat3 calculateCameraMatrix(vec3 look, vec3 up) {
+    vec3 w = normalize(-look);
+    vec3 v = normalize(up - dot(up,w)*w);
+    vec3 u = cross(v, w);
+	
+	return mat3(u,v,w);
+}
+
+
+
+float rayMarch(in vec3 ro, in vec3 rd)
+{
+    float t = MIN_DIST;
+	for( int i = 0; i < 300; i++ )
+	{
+        vec3 pos = ro + t * rd;
+        float dist = df(pos); // distance from current position to surface of rocket
+        if (dist < 0.001) {
+            hitRocket = true;
+            break;
+        }
+		float h = pos.y - height(pos);
+		if(t > MAX_DIST) 
+            break;
+		t += min(dist, 0.2 * h);
+	}
+
+	return t;
+}
+
+vec3 getNormal(vec3 p, float t)
+{
+    vec3 eps=vec3(.001 * t, .0, .0);
+    vec3 n=vec3(height(p - eps.xyy) - height(p + eps.xyy),
+                2. * eps.x,
+                height(p - eps.yyx) - height(p + eps.yyx));
+  
+    return normalize(n);
+}
+
+
+
+vec3 mountain(vec3 p, vec3 normal, vec3 L, vec3 V, vec3 rd)
+{
+
+//water/*
+if(p.y < 0.4){
+    return vec3(0.1, 0.4, 0.5);
+}else if(p.y < 0.45){
+    return vec3(0.1, 0.45, 0.55);
+}else if(p.y < 0.5){
+    return vec3(0.1, 0.5, 0.55);
+
+}
+    
+    //diffuse
+    float N_L = max(dot(normal, L), 0.f);
+    
+    vec3 col = vec3(0,0,0);
+
+    
+    //toon shader
+    float intensity = N_L;
+    if(N_L > 0.9){
+    col = vec3(1.0, 0.5, 0.5);
+    }else if(N_L > 0.5){
+    col = vec3(0.6, 0.3, 0.3);
+    }else if(N_L > 0.25){
+    col = vec3(0.4, 0.2, 0.2);
+    }else if(N_L > 0.15){
+    col = vec3(0.3, 0.2, 0.1);
+    }else{
+    col = vec3(0.1, 0.1, 0.1);
+    }
+    
+    
+   	return col;
+}
+
+vec3 sunset_sky(vec3 rd, vec3 lightDir){
+    vec3 col = vec3(0.99,0.35,0.35);
+    col = mix(0.85*vec3(0.9,0.75,0.95),col, pow(1.0-max(rd.y,0.0), 10.0 ) );
+    return col;
+}
+
+vec3 sun(vec3 rd, vec3 lightDir){
+   float sundot = clamp(dot(rd, lightDir), 0.0, 1.0);
+    vec3 col = 0.2*vec3(1.0,0.8,0.6)*pow( sundot,64.0 );
+	col += 0.3*vec3(1.0,0.8,0.6)*pow( sundot,256.0 );
+	col += 0.5*vec3(1.0,0.8,0.6)*pow( sundot,512.0 );
+
+    return col;
+}
+
+vec3 horizon(vec3 col, vec3 rd){
+    vec3 new_col = mix(col, 0.7*vec3(0.75,0.65,0.8), pow( 1.0-max(rd.y,0.0), 8.0 ) );
+    return new_col;
+
+}
+
+vec3 fog(vec3 col, float t){
+    float coef = 1.0-exp(-pow(30. * t/250.,1.5) );
+    vec3 fog = 0.7*vec3(0.75,0.65,0.8);
+    vec3 newcol = mix( col, fog, coef);
+    return newcol;
+
+}
+
+void solveEquation(mat4 coeCalculate, vec4 pos, out vec4 coe) {
+    coe = coeCalculate * pos;
+}
+
+// Calculate the current camera position
+void animateCamera(float t, out vec3 cameraPos) {
+    t = mod(t, 10.0);
+    mat4 coeCalculate = mat4(-1.0,  3.0, -3.0,  1.0,
+                              3.0, -6.0,  3.0,  0.0,
+                             -3.0,  3.0,  0.0,  0.0,
+                              1.0,  0.0,  0.0,  0.0);
+    // The position of the ith point is actually (posX[i], posY[i], posZ[i])
+    vec4 posX;  // X dimensions of 4 points
+    vec4 posY;
+    vec4 posZ;
+    
+    // Different routines based on time
+    if(t < 5.0) {
+        t /= 5.0;
+        posX = vec4( 0.0, 10.0, -10.0,  0.0);
+        posY = vec4( 3.0,  2.0,   3.0,  2.0);
+        posZ = vec4( 0.0,  5.0,  10.0, 15.0);
+    } else {
+        t = (t - 5.0) / 5.0;
+        posX = vec4( 0.0, 10.0, -10.0,  0.0);
+        posY = vec4( 2.0,  3.0,   3.0,  3.0);
+        posZ = vec4(15.0, 10.0,   5.0,  0.0);
+    }
+    
+    vec4 coeX;
+    vec4 coeY;
+    vec4 coeZ;
+    solveEquation(coeCalculate, posX, coeX);
+    solveEquation(coeCalculate, posY, coeY);
+    solveEquation(coeCalculate, posZ, coeZ);
+    
+    // Get the coefficients for Bézier curve
+    vec3 a = vec3(coeX[0], coeY[0], coeZ[0]);
+    vec3 b = vec3(coeX[1], coeY[1], coeZ[1]);
+    vec3 c = vec3(coeX[2], coeY[2], coeZ[2]);
+    vec3 d = vec3(coeX[3], coeY[3], coeZ[3]);
+    
+    // Calculate the current position
+    cameraPos = a * t * t * t + b * t * t + c * t + d;
+}
+
+vec4 load(ivec2 dataPosition) {
+    return texelFetch(iChannel1, ivec2(dataPosition), 0);
+}
+
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{
+    //vec2 uv = fragCoord/iResolution.xy;
+    vec2 uv = (fragCoord - iResolution.xy * .5) / iResolution.y;  // [-0.5, 0.5]
+    vec3 lightDir = normalize(vec3(-1., .2, -1.));
+    vec3 sunpos = normalize(vec3(-1., 0.4 * abs(sin(0.1*iTime)), -1.));
+    
+    
+    vec3 cameraPos;
+    mat3 view_matrix;
+    
+    if(BezierCurve) {
+        //camera data
+        cameraPos = vec3(5., 2., 5.);
+        vec3 lookAtPoint = vec3(-1., 2, 4.);
+        animateCamera(0.3*iTime, cameraPos);
+        
+        view_matrix = camera_matrix(cameraPos, lookAtPoint);
+    } else {
+        //camera data
+        cameraPos = load(POSITION).xyz;
+        vec3 look = load(LOOK).xyz;
+        vec3 up = load(UP).xyz;
+        
+        view_matrix = calculateCameraMatrix(look, up);
+    }
+
+    //ray
+    vec3 ro = cameraPos;
+    vec3 rd = normalize(view_matrix * vec3(uv.xy, -1.0));
+    
+    hitRocket = false;
+    //ray march
+    float t = rayMarch(ro, rd);
+    
+    vec3 col = vec3(0.f);
+    float dist = MAX_DIST;
+    
+   
+    if(t < MAX_DIST){
+        //if we hit a mountain
+        vec3 p = ro + rd*t;
+        /*vec3 normal = getNormal(p,t);
+        vec3 viewDir = normalize(ro - p);
+        if (hitRocket) {
+            col = vec3(0., 0., 0.);
+        } else {
+            col = mountain(p, normal, lightDir, viewDir, rd);
+        }*/
+        
+        if (hitRocket) {
+            vec3 skyColor = vec3(.1,.3,.7)*.7;
+
+            vec3 ambientColor = skyColor*.07;
+            vec3 materialColor = vec3(.5,.5,.5);
+            vec3 emissiveColor = vec3(.0,.0,.0);
+
+            float dTrail = dfTrail(p);
+            float dRocketBody = dfRocketBody(p);
+            float dRocketFins = dfRocketFins(p);
+            float dRocket = min(dRocketBody, dRocketFins);
+            float dRocketTrail = min(dRocket, dTrail);
+
+            if (dTrail<dRocket)
+            {
+                materialColor = vec3(.1,.1,.1);
+                float tpos = (-p.x-1.7)/16.0;
+                emissiveColor = vec3(1.9,.9,.2)*pow((1.0-tpos),8.0);
+            }
+            else 
+            {
+                //rocket
+                ambientColor = mix(skyColor,vec3(.3,.1,.3)*.4,.5);
+                if (dfRocketBody(p)<dfRocketFins(p))
+                {
+                    if (p.x<-.85 || p.x>1.0)
+                        if (p.x<-1.31)
+                            materialColor = vec3(.25,.25,.25);
+                        else
+                            materialColor = vec3(.9,.1,.1);
+                    else
+                    {
+                        materialColor = vec3(.8,.8,.8);
+                    }
+                }
+                else
+                    materialColor = vec3(.9,.1,.1);
+            }
+
+
+            float value=1.0;//max(.0,value);
+
+            vec3 normal = nf(p);
+
+            vec3 ref = reflect(rd,nf(p));
+            //float ro = min(max(min(min(df(pos+ref),df(pos+ref*0.25)*4.0), df(pos+ref*.5)*2.0)*.5,.0),1.0);
+            float ro=1.0;
+
+            float ao = df(p+normal*.125)*8.0 +
+                df(p+normal*.5)*2.0 +
+                df(p+normal*.25)*4.0 +
+                df(p+normal*.06125)*16.0;
+
+            ao=ao*.125+.5;
+            vec3 light = normalize(vec3(1,2,3));
+            float fres = pow((dot(rd,normal)*.5+.5),2.0);
+            vec3 color = vec3(.0,.0,.0); 
+                color +=(value*vec3(dot(nf(p),light)*.5+.5)*.5+ambientColor*ao)*materialColor;// +fres*.25;
+            color += emissiveColor;
+
+            //vec3 cSky = skyColor + pow(dot(dir,light)*.5+.5,8.0);
+            //if (dist>1.0) color = cSky;
+            //else color = mix(cSky,color,1.0/(1.0+tdist*.005));
+
+            color*=1.3; //boost
+            //color -= pow(length(uv),2.0)*.07;
+            color = mix(color,vec3(length(color)),length(color)*.5);
+            col = color;
+        } else {
+            vec3 normal = getNormal(p,t);
+            vec3 viewDir = normalize(ro - p);
+        
+            col = mountain(p, normal, lightDir, viewDir, rd);
+        }
+        
+        //dist = distance(p, ro) / 5.0;
+        //col = fog(col, t);
+    } else {
+        col += sunset_sky(rd, sunpos);
+        col += sun(rd, sunpos);
+        col = horizon(col, rd);
+    }
+    col = pow(clamp(col, 0., 1.), vec3(.45)); 
+
+    fragColor = vec4(vec3(col), dist);
+
+}
