@@ -1,155 +1,88 @@
-//
-// Inspired by blog post: http://tuxedolabs.blogspot.fr/2018/05/bokeh-depth-of-field-in-single-pass.html
-// Original scene: https://www.shadertoy.com/view/MsG3Dz
-//
-// There is still lots of flickering, I'm guessing this is because of the original scene's lighting.
-// Using PBR would probably fix the crazy specular values we get sometimes
-// As a quick way to remove flickering, we can use AA
-//
+const ivec2 MEMORY_BOUNDARY = ivec2(4, 3);
 
+const ivec2 POSITION = ivec2(0, 0);
+const ivec2 UP = ivec2(0, 1);
 
-#define DISPLAY_GAMMA 1.8
+const ivec2 LOOK = ivec2(0, 2);
 
-#define GOLDEN_ANGLE 2.39996323
-#define MAX_BLUR_SIZE 20.0
+const ivec2 MOUSEPOSITION = ivec2(1, 2);
 
-// Smaller = nicer blur, larger = faster
-#define RAD_SCALE 0.5
+const int KEY_LEFT  = 37;
+const int KEY_UP    = 38;
+const int KEY_RIGHT = 39;
+const int KEY_DOWN  = 40;
+const int KEY_BIND_FORWARD = KEY_UP;
+const int KEY_BIND_BACKWARD = KEY_DOWN;
+const int KEY_BIND_RIGHT = KEY_RIGHT;
+const int KEY_BIND_LEFT = KEY_LEFT;
 
-#define uFar 10.0
+const float moveRate = 5.;
 
-
-float time;
-float seed;
-float rand() { return fract(sin(seed++)*43758.545); }
-
-vec4 samp(vec2 p)
-{
-    p.y*=1280./720.;
-    return texture(iChannel0,p/2.+.5)*1.05;
+void update(out vec4 fragColor, vec2 fragCoord, ivec2 dataPosition, vec4 data) {
+    if(int(fragCoord.x) == dataPosition.x && int(fragCoord.y) == dataPosition.y)
+        fragColor = data;
 }
 
-vec3 getBlurColor(vec2 t) {
-    vec3 c=vec3(.8,.8,1)/6.;
-    vec2 p=t;
-    for(int n=0;n<2;++n)
-    {
-        float maxr=mix(1./22.,1./4.,1.-float(n))*.4;
-
-        ivec2 uo=ivec2(floor(p/maxr));
-        for(int i=-1;i<2;++i)
-            for(int j0=-1;j0<2;++j0)
-            {
-                vec2 u=vec2(uo)+vec2(i,((uo.x+i)&1)==1?-j0:j0);
-                seed=u.x*881.+u.y*927.+float(n)*1801.;
-                for(int k=0;k<11;++k)
-                {
-                    vec2 o=(u+vec2(rand(),rand()))*maxr;
-                    vec2 p2=p-o;
-                    vec3 cc=samp(o).rgb;
-                    float a=dot(cc,vec3(1./3.));
-                    float r=mix(.25,.99,pow(rand(),4.))*maxr;
-                    float ang=rand()*acos(-1.)*2.; // This angle is used for the 'stroke lines' in the circles.
-                    float d=length(p2);
-                    p2*=mat2(cos(ang),sin(ang),-sin(ang),cos(ang));
-                    cc=mix(cc,vec3(a)*1.5,pow(rand(),16.));
-                    if(rand()>-floor(time*2.)/2./10.)
-                    {
-                        // Shade in the circle, and an outline of the circle.
-                        c=mix(c,cc,mix(.1,.4,rand())*3.*pow(a,.8)*mix(.8,1.,cos(p2.x*1200.)*.5+.5)*clamp((r-d)/mix(.001,.004,rand()),0.,1.));
-                        c=mix(c,cc/2.,mix(.14,.3,pow(rand(),16.))/4.*clamp(1.-abs(r-d)/.002,0.,1.));
-                    }
-                }
-            }
-
-    }
-
-    // Apply some darkening based on edge detection, for something like a pencil sketch.
-    vec2 e=vec2(1e-3,0.);
-    vec2 p2=p+(valnoise(p*18.)-.5)*.01;
-    float c0=dot(vec3(1./3.),samp(p2).rgb);
-    float c1=dot(vec3(1./3.),samp(p2+e.xy).rgb);
-    float c2=dot(vec3(1./3.),samp(p2+e.yx*1.8).rgb);
-
-    c*=vec3(mix(.1,1.,1.-clamp(max(abs(c2-c0),abs(c1-c0))*4.,0.,.13)));
-
-    // Final output.
-    c=(c-.5)*1.1+.5;
-    return c;
+vec4 load(ivec2 dataPosition) {
+    return texelFetch(iChannel1, ivec2(dataPosition), 0);
 }
 
-float getBlurSize(float depth, float focusPoint, float focusScale)
-{
-	float coc = clamp((1.0 / focusPoint - 1.0 / depth)*focusScale, -1.0, 1.0);
-    return abs(coc) * MAX_BLUR_SIZE;
-}
-
-vec3 depthOfField(vec2 texCoord, float focusPoint, float focusScale)
-{
-    vec4 Input = texture(iChannel0, texCoord).rgba;
-    float centerDepth = Input.a * uFar;
-    float centerSize = getBlurSize(centerDepth, focusPoint, focusScale);
-    vec3 color = Input.rgb;
-    float tot = 1.0;
+vec3 keyboardInput(vec3 look, vec3 up) {
+    vec3 move = vec3(0);
+    look = normalize(look);
+    up = normalize(up);
+    vec3 left = normalize(cross(up, look));
     
-    vec2 texelSize = 1.0 / iResolution.xy;
-
-    float radius = RAD_SCALE;
-    radius = 1.;
-    for (float ang = 0.0; radius < MAX_BLUR_SIZE; ang += GOLDEN_ANGLE)
-    {
-        vec2 tc = texCoord + vec2(cos(ang), sin(ang)) * texelSize * radius;
-        
-        vec4 sampleInput = texture(iChannel0, tc).rgba;
-
-        vec3 sampleColor = sampleInput.rgb;
-        float sampleDepth = sampleInput.a * uFar;
-        float sampleSize = getBlurSize(sampleDepth, focusPoint, focusScale);
-        
-        if (sampleDepth > centerDepth)
-        {
-        	sampleSize = clamp(sampleSize, 0.0, centerSize*2.0);
-        }
-
-        float m = smoothstep(radius-0.5, radius+0.5, sampleSize);
-        color += mix(color/tot, sampleColor, m);
-        tot += 1.0;
-        radius += RAD_SCALE/radius;
-    }
+    move += look * texelFetch(iChannel0, ivec2(KEY_BIND_FORWARD, 0), 0).x;
+    move -= look * texelFetch(iChannel0, ivec2(KEY_BIND_BACKWARD, 0), 0).x;
+    move += left * texelFetch(iChannel0, ivec2(KEY_BIND_LEFT, 0), 0).x;
+    move -= left * texelFetch(iChannel0, ivec2(KEY_BIND_RIGHT, 0), 0).x;
     
-    return color /= tot;
+    return move;
 }
 
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
-	vec2 uv = fragCoord.xy / iResolution.xy;
+    if (any(greaterThan(ivec2(fragCoord), MEMORY_BOUNDARY))) return;
     
-    vec4 color = texture(iChannel0, uv).rgba;
     
-    float focusPoint = 10.0;
-    //float focusScale = (0.5 + sin(iTime) * 0.5) * 30.0;
-    float focusScale = (0.5 * 0.5) * 30.0;
-    //color.rgb = depthOfField(uv, focusPoint, focusScale);
+    if (iTime == 0.0 || iFrame == 0) {
+        update(fragColor, fragCoord, POSITION, vec4(0., 2., -5., 0.));
+        update(fragColor, fragCoord, UP, vec4(0.0, 1.0, 0.0, 0.0));
+        update(fragColor, fragCoord, LOOK, vec4(0.0, 0.0, -1.0, 0.0));  // left (1, 0, 0)
+        update(fragColor, fragCoord, MOUSEPOSITION, vec4(0.0));
+        return;
+    }
     
-    //color.rgb = depthOfField(uv, focusPoint, focusScale);
-
-    //tone mapping
-    //color.rgb = vec3(1.7, 1.8, 1.9) * color.rgb / (1.0 + color.rgb);
+    vec3 position = load(POSITION).xyz;
+    vec3 up = load(UP).xyz;
+    vec3 look = load(LOOK).xyz;
     
-    //inverse gamma correction
+    vec3 move = keyboardInput(look, up);
     
-    bool post = false;
-    
-    if(post){
-        time=iTime;
-        vec2 t=(uv*2.-1.)*.55;
-        t.x*=iResolution.x/iResolution.y;
+    position += move * iTimeDelta * moveRate;
         
-        vec3 c = getBlurColor(t);
-        fragColor.rgb=sqrt(c*mix(.9,1.,valnoise(t.xy*400.)))*1.08;}
-    else{
-    fragColor = vec4(pow(color.rgb, vec3(1.0 / DISPLAY_GAMMA)), 1.0);}
+    if(iMouse.w > 0.0) {
+        update(fragColor, fragCoord, MOUSEPOSITION, vec4(abs(iMouse.zw), 1.0, 0.0));
+    }
     
-    // Debug depth
-    //fragColor.rgb = vec3(color.a)*0.015;
+    if(iMouse.z > 0.0) {
+        vec2 mousePosition = load(MOUSEPOSITION).xy;
+        vec2 mouseMove = iMouse.xy - mousePosition;
+        if(mouseMove.x != 0.0 && abs(mouseMove.x) < 10000.0) {
+            mat3 rotateMatrix = rotate(mouseMove.x / 360., vec3(0, 1, 0));
+            look = rotateMatrix * look;
+            up = rotateMatrix * up;
+        }
+        if(mouseMove.y != 0.0 && abs(mouseMove.y) < 10000.0) {
+            mat3 rotateMatrix = rotate(mouseMove.y / 360., cross(up, look));
+            look = rotateMatrix * look;
+            up = rotateMatrix * up;
+        }
+        update(fragColor, fragCoord, MOUSEPOSITION, vec4(iMouse.xy, 0.0, 0.0));
+    }
+    
+    update(fragColor, fragCoord, POSITION, vec4(position, 1.0));
+    update(fragColor, fragCoord, UP, vec4(up, 0.0));
+    update(fragColor, fragCoord, LOOK, vec4(look, 0.0));
 }
