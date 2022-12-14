@@ -296,7 +296,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     //vec2 uv = fragCoord/iResolution.xy;
     vec2 uv = (fragCoord - iResolution.xy * .5) / iResolution.y;  // [-0.5, 0.5]
     vec3 lightDir = normalize(vec3(-1., .2, -1.));
-    vec3 sunpos = normalize(vec3(-1., 0.4 * abs(sin(0.1*iTime)), -1.));
+    vec3 sunpos = normalize(vec3(-1., 1.0 * abs(sin(0.1*iTime))-0.8, -1.));
     
     
     vec3 cameraPos;
