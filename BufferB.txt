@@ -16,6 +16,9 @@ const int OCTAVES = 8;
 
 bool hitRocket;
 
+float ti;
+float col=1e3,col3=1e3;
+
 void angularRepeat(const float a, inout vec2 v)
 {
     float an = atan(v.y,v.x);
@@ -166,10 +169,40 @@ float df(vec3 p)
     return min(dfRocket(p),dfTrail(p));
 }
 
+float f(vec3 p)
+{
+
+    float d=MAX_DIST;
+    float s=1.,ss=1.6;
+    
+    // Tangent vectors for the branch local coordinate system.
+    vec3 w=normalize(vec3(-.8+cos(0./30.)*.01,1.2,-1.));
+    vec3 u=normalize(cross(w,vec3(0,1,0)));
+
+    int j=7;
+
+    float scale=1.;
+    p/=scale;
+
+    // Evaluate the tree branches, which are just space-folded cylinders.
+    for(int i=0;
+        d=min(d,scale*max(p.y-1.,max(-p.y,length(p.xz)-.1/(p.y+.7)))/s),
+        p.xz=abs(p.xz),
+        p.y-=1.,
+        i<j;
+        p*=mat3(u,normalize(cross(u,w)),w), // Rotate in to the local space of a branch.
+        p*=ss,
+        s*=ss,
+        ++i);
+
+    return min(d,col=max(0.,length(p)-.5)/s);
+}
+
+
 vec3 nf(vec3 p)
 {
     vec2 e = vec2(0,0.005);
-    return normalize(vec3(df(p+e.yxx),df(p+e.xyx),df(p+e.xxy)));
+    return normalize(vec3(f(p+e.yxx),f(p+e.xyx),f(p+e.xxy)));
 }
 
 
@@ -181,11 +214,11 @@ float noise(in vec2 uv)
 
 float height(vec3 p)
 {
-    vec2 uv = p.xz;
+    vec2 uv = vec2(p.x + 0.2 * iTime, p.z + 0.2 * iTime);
     uv /= 1.5;
     float value = 0.;
     float amplitude = 1.;
-    float freq = 0.8;
+    float freq = 0.6;
     
     for (int i = 0; i < OCTAVES; i++)
     {
@@ -195,7 +228,7 @@ float height(vec3 p)
         
     }
     
-    return value*2.0-2.0;
+    return value*2.0-2.5;
     //return value*2.0;
 }
 
@@ -220,14 +253,20 @@ mat3 calculateCameraMatrix(vec3 look, vec3 up) {
 }
 
 
+float sphere(vec3 pos, float radius, vec3 center) {
+    return length(pos - center) - radius;
+}
 
+float dist;
 float rayMarch(in vec3 ro, in vec3 rd)
 {
     float t = MIN_DIST;
 	for( int i = 0; i < 300; i++ )
 	{
         vec3 pos = ro + t * rd;
-        float dist = df(pos); // distance from current position to surface of rocket
+        //float dist = df(pos); // distance from current position to surface of rocket
+        //float dist = sphere(pos, 1.0f, vec3(0, 0, 0));
+        dist = f(pos);
         if (dist < 0.001) {
             hitRocket = true;
             break;
@@ -257,11 +296,11 @@ vec3 mountain(vec3 p, vec3 normal, vec3 L, vec3 V, vec3 rd)
 {
 
 //water/*
-if(p.y < 0.4){
+if(p.y < 0.4 - 0.5){
     return vec3(0.1, 0.4, 0.5);
-}else if(p.y < 0.45){
+}else if(p.y < 0.45 - 0.5){
     return vec3(0.1, 0.45, 0.55);
-}else if(p.y < 0.5){
+}else if(p.y < 0.5 - 0.5){
     return vec3(0.1, 0.5, 0.55);
 
 }
@@ -405,13 +444,16 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     //ray march
     float t = rayMarch(ro, rd);
     
-    vec3 col = vec3(0.f);
-    float dist = MAX_DIST;
+    vec3 color = vec3(0.f);
+    float dist1 = MAX_DIST;
     
    
     if(t < MAX_DIST){
         //if we hit a mountain
         vec3 p = ro + rd*t;
+        
+        dist1 = distance(p, ro) / 5.0;
+
         /*vec3 normal = getNormal(p,t);
         vec3 viewDir = normalize(ro - p);
         if (hitRocket) {
@@ -421,7 +463,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
         }*/
         
         if (hitRocket) {
-            vec3 skyColor = vec3(.1,.3,.7)*.7;
+            /*vec3 skyColor = vec3(.1,.3,.7)*.7;
 
             vec3 ambientColor = skyColor*.07;
             vec3 materialColor = vec3(.5,.5,.5);
@@ -486,24 +528,57 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 
             color*=1.3; //boost
             //color -= pow(length(uv),2.0)*.07;
-            color = mix(color,vec3(length(color)),length(color)*.5);
-            col = color;
+            color = mix(color,vec3(length(color)),length(color)*.5);*/
+            
+            vec3 ld=normalize(vec3(1.,3.+cos(ti)/2.,1.+sin(ti*3.)/2.));
+    float e=1e-2;
+    float d2=f(ro+rd*t+ld*e);
+    float l=max(0.,(d2-dist)/e);
+
+    float d3=f(ro+rd*t+vec3(0,1,0)*e);
+    float l2=max(0.,.5+.5*(d3-dist)/e);
+    color=vec3(.5,.45,.4)/5.5;
+    if(col<2e-3)color=vec3(.9,.09,.07);
+        
+        vec3 normal = nf(p);
+        
+        vec3 diffuseColor = color * 0.2;
+        
+        float lambertain = max(dot(lightDir, normal), 0.0);
+        color += lambertain * diffuseColor;
+       
+       vec3 rp = ro + rd * (t - 1e-3);
+       /*t = 0.1;
+       float sh = 1.0;
+       
+       for (int i = 0; i < 30; ++i) {
+           float d = f(rp + lightDir * t) + 0.01;
+           sh = min(sh, d * 50.0 + 0.3);
+           if (d < 1e-4) break;
+           t += d;
+       }*/
+       
+       //color *= sh * (0.3 + 0.8 * l2) * vec3(1.0, 1.0, 0.9) * 0.7;
+        
+    //color*=l2*vec3(.85,.85,1.)*.8;
+            //col = vec3(0., 0., 0.);//color;0;
         } else {
             vec3 normal = getNormal(p,t);
             vec3 viewDir = normalize(ro - p);
         
-            col = mountain(p, normal, lightDir, viewDir, rd);
+            color = mountain(p, normal, lightDir, viewDir, rd);
         }
         
         //dist = distance(p, ro) / 5.0;
-        //col = fog(col, t);
+        //color = fog(color, t);
     } else {
-        col += sunset_sky(rd, sunpos);
-        col += sun(rd, sunpos);
-        col = horizon(col, rd);
+        color += sunset_sky(rd, sunpos);
+        color += sun(rd, sunpos);
+        color = horizon(color, rd);
     }
-    col = pow(clamp(col, 0., 1.), vec3(.45)); 
+    color = pow(clamp(color, 0., 1.), vec3(.45)); 
 
-    fragColor = vec4(vec3(col), dist);
+    fragColor = vec4(vec3(color), dist1);
 
 }
+
