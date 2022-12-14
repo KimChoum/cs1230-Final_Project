@@ -11,3 +11,21 @@ mat3 rotate(float theta, vec3 axis)
     
     return rotateMatrix;
 }
+
+float hash(float n)
+{
+    return fract(sin(n)*43758.5453);
+}
+
+float noise_blur(vec2 p)
+{
+    return hash(p.x + p.y*57.0);
+}
+
+float valnoise(vec2 p)
+{
+    vec2 c=floor(p);
+    vec2 f=smoothstep(0.,1.,fract(p));
+    return mix (mix(noise_blur(c+vec2(0,0)), noise_blur(c+vec2(1,0)), f.x),
+                mix(noise_blur(c+vec2(0,1)), noise_blur(c+vec2(1,1)), f.x), f.y);
+}
